@@ -12,7 +12,7 @@
 2. 安装后重启 Harness。
 3. 打开 **设置 → DSHLive2D**，启用「Harness 内使用」。
 
-内置 Hiyori（桃濑日和）及 8 个动作，首次使用无需导入模型。
+初始模型为 **DeepSeek-chan（大肥鱼）**，附带 8 个动作（含待机）及 23 个表情，首次使用无需导入模型。
 
 这是社区插件。Harness 内使用支持 Harness Web；桌面悬浮支持 **Windows x64**，需要系统已安装 WebView2 Runtime。已适配 Harness Desktop 0.2.0-rc.2。
 
@@ -39,9 +39,21 @@
 
 ## 数据与许可
 
-角色和配置默认保存在 `%USERPROFILE%\.dsh\live2d-stage`；设置 `DSH_HOME` 后使用其下的 `live2d-stage` 目录。升级插件不会覆盖已导入的模型。
+角色和配置默认保存在 `%USERPROFILE%\.dsh\live2d-stage`；设置 `DSH_HOME` 后使用其下的 `live2d-stage` 目录。升级插件不会覆盖已导入的模型；旧版内置 Hiyori 会自动替换为 DeepSeek-chan，已选择的自定义角色保持不变。
 
-内置 Hiyori 来自 Live2D 示例模型。模型、Cubism SDK 和其他第三方组件仍受各自许可约束，详见 [licenses](licenses)。
+### 初始模型与制作人员
+
+- **模型名称**：DeepSeek-chan（大肥鱼），神宫凉子免费配布模型。
+- **原画、拆分及模型发布**：[神宫凉子 · Bilibili 主页](https://space.bilibili.com/13737731)。
+- **Live2D 建模**：[霓虹猫_NeonNeko · Bilibili 主页](https://space.bilibili.com/3546725618813315)。
+
+感谢原作者与建模师提供模型。模型版权归各自作者所有，插件作者仅负责程序开发与模型接入。
+
+完整原始模型文件保存在 [character/deepseek](character/deepseek)，包括纹理、动作、表情、VTube Studio 配置与使用须知；插件仅在运行时补充动作和表情索引，保留仓库内的原始文件及目录结构。
+
+请阅读随包的 [DeepSeek 免费 Live2D 模型使用须知](character/deepseek/DeepSeek免费%20Live2D%20模型使用须知.txt)。须知要求公开使用时署名，并禁止擅自重新分发完整模型文件；将含模型的仓库或插件包公开上传前，须取得作者的另行授权。推荐模型时请分享作者的原始获取页面。
+
+Cubism SDK 和其他第三方组件仍受各自许可约束，详见 [licenses](licenses)。
 
 ## 开发
 

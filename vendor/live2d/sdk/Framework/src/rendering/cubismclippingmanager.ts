@@ -960,6 +960,14 @@ export abstract class CubismClippingManager<
     return this._renderTextureCount;
   }
 
+  /** Packed atlases cannot isolate more masks than their channel slots. */
+  public requiresHighPrecisionMask(): boolean {
+    const capacity = this._renderTextureCount <= 1
+      ? ClippingMaskMaxCountOnDefault
+      : ClippingMaskMaxCountOnMultiRenderTexture * this._renderTextureCount;
+    return this._clippingContextListForMask.length > capacity;
+  }
+
   /**
    * カラーチャンネル（RGBA）のフラグを取得する
    * @param channelNo カラーチャンネル（RGBA）の番号（0:R, 1:G, 2:B, 3:A）

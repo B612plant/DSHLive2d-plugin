@@ -9,7 +9,7 @@ import {FloatingController} from '../lib/floating.mjs';
 const plugin=resolve('.'),root=await mkdtemp(resolve(tmpdir(),'live2d-native-test-')),report=resolve('build/reports/live2d-plugin');
 let server,controller,nativePointerReceived=false;
 try{
- await mkdir(report,{recursive:true});const store=new StageStore(root);await store.initialize();await store.ensureDefaultCharacter(resolve(plugin,'character/hiyori'));
+ await mkdir(report,{recursive:true});const store=new StageStore(root);await store.initialize();await store.ensureDefaultCharacter(resolve(plugin,'character/deepseek'));
  server=createServer(async(req,res)=>{
  if(req.url==='/live2d-stage/assets/gaze-test-receipt'&&controller.admits(req)){nativePointerReceived=true;res.end('ok');return;}
  if(req.url?.startsWith('/live2d-stage/assets/floating.js')&&controller.admits(req)){res.setHeader('Content-Type','text/javascript');res.setHeader('Cache-Control','no-store');res.end(`window.chrome.webview.addEventListener('message',e=>{if(e.data?.type==='live2d-pointer'&&Number.isFinite(e.data.x)&&Number.isFinite(e.data.y))fetch('/live2d-stage/assets/gaze-test-receipt');});`+await readFile(resolve(plugin,'assets/floating.js'),'utf8'));return;}

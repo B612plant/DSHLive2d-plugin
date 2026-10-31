@@ -61,8 +61,18 @@ export function inspectModel(files, mocPath) {
   return {modelPath,model,actions,allowed:[...allowed]};
 }
 
-const hiyoriNames={hiyori_m01:'低头抬眼，轻轻侧头',hiyori_m02:'左右歪头，眨眼张嘴',hiyori_m05:'侧头闭眼微笑',hiyori_m03:'抬眼侧头，身体轻摆',hiyori_m04:'低头左右看',hiyori_m06:'身体后仰，睁眼张嘴',hiyori_m07:'脸红皱眉，低头张嘴',hiyori_m08:'垂眼低头，张嘴'};
-function nameHiyori(character){for(const action of character.actions){const row=character.model.FileReferences.Motions?.[action.group]?.[action.index];if(!row)continue;const original=posix.basename(row.File,'.motion3.json'),name=hiyoriNames[original];if(name&&action.name===original){action.name=name;action.named=true;}else if(name&&action.named===undefined)action.named=true;}}
+// The original VTube Studio package keeps animations and expressions outside
+// model3.json. Adapt the runtime copy while preserving the bundled originals.
+function configureDefaultModel(files,mocPath) {
+  const {model,modelPath}=inspectModel(files,mocPath),refs=model.FileReferences;
+  const relative=p=>posix.relative(posix.dirname(modelPath),p);
+  const motions=[...files.keys()].filter(p=>p.endsWith('.motion3.json')).sort();
+  const idle=motions.filter(p=>/^idle$/i.test(posix.basename(p,'.motion3.json')));
+  refs.Motions={Idle:idle.map(p=>({File:relative(p)})),Actions:motions.filter(p=>!idle.includes(p)).map(p=>({File:relative(p)}))};
+  refs.Expressions=[...files.keys()].filter(p=>p.endsWith('.exp3.json')).sort().map(p=>({Name:posix.basename(p,'.exp3.json'),File:relative(p)}));
+  files.set(modelPath,Buffer.from(JSON.stringify(model,null,2)));
+  return inspectModel(files,mocPath);
+}
 export class StageStore {
   constructor(root) {this.root=resolve(root);this.state={version:1,selectedId:null,characters:[]};this.queue=Promise.resolve();this.sequence=0;this.events=[];this.receipts=new Map();this.clients=new Map();this.epoch=randomUUID();}
   async initialize() {await mkdir(this.root,{recursive:true});try{this.state=JSON.parse(await readFile(resolve(this.root,'characters.json'),'utf8'));if(this.state.version!==1||!Array.isArray(this.state.characters))throw new Error('角色配置版本不支持');}catch(e){if(e.code!=='ENOENT')throw e;}}
@@ -73,20 +83,23 @@ export class StageStore {
   async ensureDefaultCharacter(directory) {
     let createdDirectory;
     try {return await this.transaction(async()=>{
-      const existing=this.state.characters.find(c=>c.builtin==='hiyori');
-      if(existing){nameHiyori(existing);if(!this.state.characters.some(c=>c.id===this.state.selectedId))this.state.selectedId=existing.id;return existing;}
+      const existing=this.state.characters.find(c=>c.builtin==='deepseek');
+      if(existing){if(!this.state.characters.some(c=>c.id===this.state.selectedId))this.state.selectedId=existing.id;return existing;}
       const files=new Map();
       async function scan(dir,prefix=''){for(const entry of await readdir(dir,{withFileTypes:true})){const p=prefix+entry.name;safePath(p);if(entry.isDirectory())await scan(resolve(dir,entry.name),p+'/');else if(entry.isFile())files.set(p,await readFile(resolve(dir,entry.name)));else throw new Error('默认模型资源不允许链接');}}
       await scan(directory);
       const mocs=[...files.keys()].filter(p=>p.endsWith('.moc3'));
-      if(mocs.length!==1||files.get(mocs[0]).subarray(0,4).toString()!=='MOC3')throw new Error('默认 Hiyori 模型资源无效');
-      const info=inspectModel(files,mocs[0]),id=randomUUID();
+      if(mocs.length!==1||files.get(mocs[0]).subarray(0,4).toString()!=='MOC3')throw new Error('默认 DeepSeek-chan 模型资源无效');
+      const info=configureDefaultModel(files,mocs[0]),id=randomUUID();
       createdDirectory=resolve(this.root,'models',id);
-      for(const p of info.allowed){const target=resolve(createdDirectory,p);await mkdir(dirname(target),{recursive:true});await writeFile(target,files.get(p));}
-      const character={id,name:'Hiyori',builtin:'hiyori',modelPath:info.modelPath,model:info.model,actions:info.actions,files:info.allowed};
-      nameHiyori(character);
+      // Preserve auxiliary VTube Studio settings, preview, and usage notice too.
+      for(const [p,bytes] of files){const target=resolve(createdDirectory,p);await mkdir(dirname(target),{recursive:true});await writeFile(target,bytes);}
+      const character={id,name:'DeepSeek-chan（大肥鱼）',builtin:'deepseek',modelPath:info.modelPath,model:info.model,actions:info.actions,files:[...files.keys()]};
+      for(const action of character.actions){if(action.name==='IDLE')action.name='待机';action.named=true;}
+      const previousDefault=this.state.characters.find(c=>c.builtin==='hiyori');
+      this.state.characters=this.state.characters.filter(c=>c.builtin!=='hiyori');
       this.state.characters.push(character);
-      if(!this.state.characters.some(c=>c.id===this.state.selectedId))this.state.selectedId=id;
+      if(this.state.selectedId===previousDefault?.id||!this.state.characters.some(c=>c.id===this.state.selectedId))this.state.selectedId=id;
       return character;
     });}catch(error){if(createdDirectory)await rm(createdDirectory,{recursive:true,force:true});throw error;}
   }

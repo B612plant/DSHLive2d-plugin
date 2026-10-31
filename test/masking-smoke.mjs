@@ -1,0 +1,41 @@
+import {build} from 'esbuild';
+import {chromium} from 'playwright';
+import {createServer} from 'node:http';
+import {mkdtemp,readFile,writeFile,rm,mkdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
+import {handler} from '../lib/index.mjs';
+import {StageStore} from '../lib/store.cjs';
+import assert from 'node:assert/strict';
+const root=await mkdtemp(resolve(tmpdir(),'live2d-mask-test-')),report=resolve('build/reports/live2d-plugin/masks-fixed');
+await mkdir(report,{recursive:true});
+let browser,server;
+try{
+ const store=new StageStore(root);await store.initialize();await store.ensureDefaultCharacter(resolve('character/deepseek'));
+ const react=await build({entryPoints:[resolve('test/settings-harness.tsx')],bundle:true,platform:'browser',format:'iife',write:false,define:{'process.env.NODE_ENV':'"production"'}});
+ const client=(await readFile('lib/client.js','utf8')).replace('const portrait = this._subdelegate.getCanvas().dataset.portrait === "true";','window.__maskReview=this; const portrait = this._subdelegate.getCanvas().dataset.portrait === "true";');
+ if(!client.includes('window.__maskReview=this'))throw Error('Instrumentation missing');
+ const route=handler(store,resolve('assets'),()=>({peer:{}}));
+ server=createServer((req,res)=>{if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<html><body style="background:#ddd"><div id="root"></div><script src="/react.js"></script><script src="/client.js"></script></body></html>');}else if(req.url==='/react.js'){res.setHeader('Content-Type','text/javascript');res.end(react.outputFiles[0].contents);}else if(req.url==='/client.js'){res.setHeader('Content-Type','text/javascript');res.end(client);}else void route(req,res);});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ const page=await browser.newPage({viewport:{width:1500,height:1650}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',m.text());});
+ await page.addInitScript(id=>localStorage.setItem('live2d-stage.layout.app.'+id,JSON.stringify({left:360,top:100,width:1050,height:1410,scale:1,x:0,y:0})),store.character().id);
+ await page.goto('http://127.0.0.1:'+server.address().port);
+ await page.waitForFunction(()=>window.__maskReview?._models?.[0]?._state===23,null,{timeout:35000});
+ await page.evaluate(()=>{const m=window.__maskReview;m._idleLife.nextBlinkAt=performance.now()+60000;m._idleLife.setLook(0,0,performance.now());});
+ await page.waitForTimeout(1000);
+ const metrics=await page.evaluate(()=>{const m=window.__maskReview._models[0],r=m.getRenderer(),c=m.getModel(),cl=r._drawableClippingManager;return{drawables:c.getDrawableCount(),clippingContexts:cl?._clippingContextListForMask?.length,maskBufferSize:r.getClippingMaskBufferSize(),highPrecision:r.isUsingHighPrecisionMask(),maskBufferCount:cl?._renderTextureCount,maskSources:[...new Set(c.getDrawableMasks().flatMap(x=>[...x]))].length};});
+ assert.equal(metrics.clippingContexts,49,'real model has more masks than the packed atlas capacity');
+ assert.equal(metrics.highPrecision,true,'complex models select isolated masks automatically');
+ assert.equal(metrics.maskBufferSize,1024,'isolated masks remain clear when enlarged');
+ await page.screenshot({path:resolve(report,'center.png')});
+ for(const [name,x,y] of [['left',-.7,.4],['right',.7,-.4]]){await page.evaluate(({x,y})=>window.__maskReview.setLookTarget(x,y),{x,y});await page.waitForTimeout(400);await page.screenshot({path:resolve(report,name+'.png')});}
+ const expression=store.character().actions.find(a=>a.name==='圈圈眼');assert.ok(expression);
+ assert.equal(await page.evaluate(id=>window.__maskReview.setExpression(id),expression.expressionId),true);
+ await page.waitForTimeout(500);await page.screenshot({path:resolve(report,'expression.png')});
+ assert.equal(await page.evaluate(()=>window.__maskReview._subdelegate.getGl().getError()),0);
+ assert.deepEqual(errors,[]);
+ await writeFile(resolve(report,'metrics.json'),JSON.stringify({...metrics,errors},null,2));console.log(JSON.stringify({...metrics,errors}));
+}finally{await browser?.close();if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}await rm(root,{recursive:true,force:true});}

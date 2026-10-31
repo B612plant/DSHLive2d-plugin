@@ -509,6 +509,17 @@ export class CubismRenderer_WebGL extends CubismRenderer {
       );
     }
 
+    // Overflowing the packed atlas aliases unrelated masks to the same channel.
+    // Draw each mask separately for complex models, including hidden expressions
+    // that may become visible later. Configure once before allocating GL buffers.
+    const clippingManagers = [this._drawableClippingManager, this._offscreenClippingManager];
+    if (clippingManagers.some(manager => manager?.requiresHighPrecisionMask())) {
+      this.useHighPrecisionMask(true);
+      for (const manager of clippingManagers) {
+        manager?.setClippingMaskBufferSize(1024);
+      }
+    }
+
     // IndexList と TypeListのサイズをモデルの描画オブジェクト数に合わせる
     updateSize(
       this._sortedObjectsIndexList,

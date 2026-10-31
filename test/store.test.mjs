@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {mkdtemp,rm,readFile,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {StageStore,safePath} from '../src/store.mjs';
@@ -16,19 +16,37 @@ test('rejects traversal, absolute paths, duplicate model candidates and missing 
 test('playback needs ready preview; rejects stale role and unknown action; returns honest receipts',()=>isolated(async s=>{const a=await s.importZip(zip(fixture()),'A');await assert.rejects(async()=>s.play(a.id,a.actions[0].id),/未就绪/);s.poll('preview',a.id,null,true);const event=s.play(a.id,a.actions[0].id);assert.equal(event.status,'queued');assert.equal(s.poll('preview',a.id,0,true).events.length,1);s.receipt({eventId:event.eventId,status:'played'});assert.equal(s.receipts.get(event.eventId).status,'played');assert.throws(()=>s.play(a.id,'made-up'));await s.importZip(zip(fixture()),'B');assert.throws(()=>s.play(a.id,a.actions[0].id),/角色已切换/);}));
 test('concurrent writes preserve both role names',()=>isolated(async s=>{const a=await s.importZip(zip(fixture()),'A'),b=await s.importZip(zip(fixture()),'B');await Promise.all([s.update({characterId:a.id,name:'一'}),s.update({characterId:b.id,name:'二'})]);assert.deepEqual(s.state.characters.map(c=>c.name),['一','二']);}));
 
-test('bundled Hiyori initializes once, selects by default and preserves renamed actions',()=>isolated(async(s,root)=>{
-  const directory=new URL('../character/hiyori/',import.meta.url);
+test('bundled DeepSeek initializes once, retains all resources, and preserves renamed actions',()=>isolated(async(s,root)=>{
+  const directory=new URL('../character/deepseek/',import.meta.url);
   const {fileURLToPath}=await import('node:url');
   const path=fileURLToPath(directory);
   const [a,b]=await Promise.all([s.ensureDefaultCharacter(path),s.ensureDefaultCharacter(path)]);
-  assert.equal(a.id,b.id);assert.equal(s.state.characters.length,1);assert.equal(s.catalog().characterName,'Hiyori');assert.equal(a.actions.length,8);assert.ok(a.actions.every(a=>a.named&&!a.name.startsWith('hiyori_')));
+  assert.equal(a.id,b.id);assert.equal(s.state.characters.length,1);assert.equal(s.catalog().characterName,'DeepSeek-chan（大肥鱼）');assert.equal(a.builtin,'deepseek');
+  assert.equal(a.actions.filter(a=>a.kind==='motion').length,8);assert.equal(a.actions.filter(a=>a.kind==='expression').length,23);assert.ok(a.actions.every(a=>a.named));
+  assert.equal(a.model.FileReferences.Motions.Idle[0].File,'Animation/IDLE.motion3.json');
+  const originals=(await readdir(path,{recursive:true,withFileTypes:true})).filter(e=>e.isFile()).map(e=>join(e.parentPath,e.name).slice(path.length).replaceAll('\\','/').replace(/^\//,''));
+  assert.deepEqual([...a.files].sort(),originals.sort());
+  for(const p of a.files){const bundled=await readFile(join(path,p)),installed=await readFile(join(root,'models',a.id,p));if(p===a.modelPath){assert.equal(JSON.parse(bundled).FileReferences.Motions,undefined);assert.deepEqual(JSON.parse(installed),a.model);}else assert.deepEqual(installed,bundled,p);}
   await s.update({characterId:a.id,actionId:a.actions[0].id,actionName:'默认招手'});
   const reload=new StageStore(root);await reload.initialize();await reload.ensureDefaultCharacter(path);
   assert.equal(reload.catalog().actions[0].name,'默认招手');assert.equal(reload.state.characters.length,1);
 }));
+
+test('upgrades the legacy built-in model while preserving user models, selection, and preferences',()=>isolated(async(s,root)=>{
+  const custom=await s.importZip(zip(fixture()),'我的角色');
+  const legacy={...structuredClone(custom),id:'legacy-hiyori',builtin:'hiyori',name:'Hiyori'};
+  await s.transaction(()=>{s.state.characters.push(legacy);s.state.selectedId=legacy.id;});
+  await s.updatePreferences({actionControl:true,visible:false});
+  const {fileURLToPath}=await import('node:url');const path=fileURLToPath(new URL('../character/deepseek/',import.meta.url));
+  const replacement=await s.ensureDefaultCharacter(path);
+  assert.equal(s.state.selectedId,replacement.id);assert.equal(s.state.characters.length,2);assert.ok(!s.state.characters.some(c=>c.builtin==='hiyori'));assert.deepEqual(s.character(custom.id),custom);
+  assert.deepEqual(s.preferences(),{desktopFloating:false,actionControl:true,visible:false});
+  const reload=new StageStore(root);await reload.initialize();assert.equal((await reload.ensureDefaultCharacter(path)).id,replacement.id);assert.equal(reload.state.characters.length,2);
+  await reload.update({characterId:custom.id,select:true});await reload.ensureDefaultCharacter(path);assert.equal(reload.state.selectedId,custom.id);
+}));
 test('adding default model preserves an existing selected user character',()=>isolated(async s=>{
   const selected=await s.importZip(zip(fixture()),'我的角色');
-  const {fileURLToPath}=await import('node:url');await s.ensureDefaultCharacter(fileURLToPath(new URL('../character/hiyori/',import.meta.url)));
+  const {fileURLToPath}=await import('node:url');await s.ensureDefaultCharacter(fileURLToPath(new URL('../character/deepseek/',import.meta.url)));
   assert.equal(s.state.selectedId,selected.id);assert.equal(s.state.characters.length,2);
 }));
 

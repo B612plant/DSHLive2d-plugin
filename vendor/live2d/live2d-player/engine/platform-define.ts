@@ -1,15 +1,15 @@
 /// <reference path="../cubism-modules.d.ts" />
 import type { ActiveCharacterRuntime } from '../types';
 
-export let ResourcesPath = '/character/hiyori/';
+export let ResourcesPath = '/character/deepseek/';
 export let ShaderPath = '/api/nirei/live2d/shaders/';
 export let BackImageName = 'back_transparent.png';
 export let GearImageName = 'back_transparent.png';
 export let PowerImageName = 'back_transparent.png';
 
-export let ModelDir: string[] = ['hiyori_free_t08'];
+export let ModelDir: string[] = [''];
 export let ModelDirSize = ModelDir.length;
-export let ModelJsonNames: string[] = ['hiyori_free_t08.model3.json'];
+export let ModelJsonNames: string[] = ['大肥鱼.model3.json'];
 
 export let MotionGroupIdle = 'Idle';
 export let MotionGroupTapBody = 'Tap@Body';

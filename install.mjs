@@ -24,7 +24,7 @@ try {
   await mkdir(candidate);
   for(const item of ['package.json','cordis.patch.yml','README.md','lib/index.mjs','lib/store.cjs','lib/client.js','lib/floating.mjs','lib/chat.mjs','lib/native','assets','licenses','locale','character']){await mkdir(dirname(resolve(candidate,item)),{recursive:true});await cp(resolve(source,item),resolve(candidate,item),{recursive:true});}
   const inventory=[];
-  async function scan(dir,prefix=''){for(const e of await readdir(dir,{withFileTypes:true})){const p=prefix+e.name;if(e.isDirectory())await scan(join(dir,e.name),p+'/');else{const b=await readFile(join(dir,e.name));if(b.length>10000000)throw new Error('发布单文件超过 10,000,000 字节：'+p);inventory.push({path:p,bytes:b.length,sha256:createHash('sha256').update(b).digest('hex')});}}}
+  async function scan(dir,prefix=''){for(const e of await readdir(dir,{withFileTypes:true})){const p=prefix+e.name;if(e.isDirectory())await scan(join(dir,e.name),p+'/');else{const b=await readFile(join(dir,e.name));if(b.length>128*1024*1024)throw new Error('安装单文件超过 128 MiB：'+p);inventory.push({path:p,bytes:b.length,sha256:createHash('sha256').update(b).digest('hex')});}}}
   await scan(candidate);
   const stamp=new Date().toISOString().replace(/[:.]/g,'-');
   await writeFile(resolve(report,'profile-before-'+stamp+'.json'),original);
