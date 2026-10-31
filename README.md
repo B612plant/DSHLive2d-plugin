@@ -39,7 +39,7 @@
 
 ## 数据与许可
 
-角色和配置默认保存在 `%USERPROFILE%\.dsh\live2d-stage`；设置 `DSH_HOME` 后使用其下的 `live2d-stage` 目录。升级插件不会覆盖已导入的模型；旧版内置 Hiyori 会自动替换为 DeepSeek-chan，已选择的自定义角色保持不变。
+角色和配置默认保存在 `%USERPROFILE%\.dsh\live2d-stage`；设置 `DSH_HOME` 后使用其下的 `live2d-stage` 目录。升级插件不会覆盖已导入的模型。
 
 ### 初始模型与制作人员
 
