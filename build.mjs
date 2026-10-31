@@ -1,10 +1,17 @@
 import {createHash} from 'node:crypto';
-import {build} from 'esbuild';
-import {mkdir,cp,readFile,writeFile,rm} from 'node:fs/promises';
+import {build as bundle} from 'esbuild';
+import {mkdir,cp,readFile,writeFile,rename,rm} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {clientStyleModule} from './scripts/style-module.mjs';
 const root=dirname(fileURLToPath(import.meta.url));
+// Replace completed bundles atomically: Windows may keep the previous JS file
+// mapped while a local preview or a scanner is still reading it.
+async function build(options){
+  const result=await bundle({...options,write:false});
+  for(const file of result.outputFiles){const temporary=file.path+'.building';try{await writeFile(temporary,file.contents);await rename(temporary,file.path);}finally{await rm(temporary,{force:true});}}
+  return result;
+}
 await mkdir(resolve(root,'lib'),{recursive:true});
 await mkdir(resolve(root,'character'),{recursive:true});
 // Bundle the already-present ZIP library; no runtime install or download is needed.

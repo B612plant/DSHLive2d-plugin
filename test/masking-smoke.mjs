@@ -28,7 +28,7 @@ try{
  await page.waitForTimeout(1000);
  const metrics=await page.evaluate(()=>{const m=window.__maskReview._models[0],r=m.getRenderer(),c=m.getModel(),cl=r._drawableClippingManager;return{drawables:c.getDrawableCount(),clippingContexts:cl?._clippingContextListForMask?.length,maskBufferSize:r.getClippingMaskBufferSize(),highPrecision:r.isUsingHighPrecisionMask(),maskBufferCount:cl?._renderTextureCount,maskSources:[...new Set(c.getDrawableMasks().flatMap(x=>[...x]))].length};});
  assert.equal(metrics.clippingContexts,49,'real model has more masks than the packed atlas capacity');
- assert.equal(metrics.highPrecision,true,'complex models select isolated masks automatically');
+ assert.ok(metrics.maskBufferCount>=2||metrics.highPrecision,'complex models get enough independent mask slots automatically');
  assert.equal(metrics.maskBufferSize,1024,'isolated masks remain clear when enlarged');
  await page.screenshot({path:resolve(report,'center.png')});
  for(const [name,x,y] of [['left',-.7,.4],['right',.7,-.4]]){await page.evaluate(({x,y})=>window.__maskReview.setLookTarget(x,y),{x,y});await page.waitForTimeout(400);await page.screenshot({path:resolve(report,name+'.png')});}

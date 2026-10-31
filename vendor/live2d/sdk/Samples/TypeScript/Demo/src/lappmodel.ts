@@ -232,6 +232,17 @@ export class LAppModel extends CubismUserModel {
           })
           .then(arrayBuffer => {
             this.loadPhysics(arrayBuffer, arrayBuffer.byteLength);
+            try {
+              const physics = JSON.parse(new TextDecoder().decode(arrayBuffer));
+              for (const row of physics.PhysicsSettings ?? []) {
+                if (row.Input?.length !== 1) continue;
+                const input = row.Input[0].Source?.Id;
+                for (const output of row.Output ?? []) {
+                  const id = output.Destination?.Id;
+                  if (/^ParamAngle[XYZ]$/.test(id) && input === id.replace('Param', '')) this.stagePhysicsInputs[id] = input;
+                }
+              }
+            } catch { /* Models without compatible physics use standard parameters. */ }
 
             // Physics Updaterの追加
             if (this._physics) {
@@ -620,10 +631,26 @@ export class LAppModel extends CubismUserModel {
     this._model.saveParameters(); // 状態を保存
     //--------------------------------------------------------------------------
 
+    // Stage input is applied before expressions and physics, so dependent face,
+    // hair and eyelid meshes are evaluated from the same input for this frame.
+    this.stageInput?.();
     // UpdateSchedulerによる一括エフェクト更新
     this._updateScheduler.onLateUpdate(this._model, deltaTimeSeconds);
 
     this._model.update();
+  }
+
+  public stagePhysicsInputs: Record<string,string> = {};
+  private stageInput: (() => void) | null = null;
+  public setStageInput(input: () => void): void {
+    if (this.stageInput) return;
+    this.stageInput = input;
+    const remove = [];
+    for (let i = 0; i < this._updateScheduler.getUpdatableCount(); i++) {
+      const updater = this._updateScheduler.getUpdatable(i);
+      if (updater instanceof CubismEyeBlinkUpdater || updater instanceof CubismBreathUpdater || updater instanceof CubismLookUpdater) remove.push(updater);
+    }
+    for (const updater of remove) this._updateScheduler.removeUpdatableList(updater);
   }
 
   /**

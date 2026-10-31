@@ -24,6 +24,7 @@ export class IdleLife {
   private nextSaccadeAt = performance.now() + 1200;
   private saccadeX = 0;
   private saccadeY = 0;
+  private lastFrame = performance.now();
 
   shouldYield(priority: number): boolean {
     return priority > PriorityIdle;
@@ -44,8 +45,11 @@ export class IdleLife {
     const looking = nowMs < this.lookUntil;
     const goalX = looking ? this.lookX : this.saccade(nowMs, 'x');
     const goalY = looking ? this.lookY : this.saccade(nowMs, 'y');
-    this.gazeX += (goalX - this.gazeX) * 0.18;
-    this.gazeY += (goalY - this.gazeY) * 0.18;
+    const dt = Math.max(0, Math.min(100, nowMs - this.lastFrame));
+    this.lastFrame = nowMs;
+    const alpha = 1 - Math.exp(-dt / 75);
+    this.gazeX += (goalX - this.gazeX) * alpha;
+    this.gazeY += (goalY - this.gazeY) * alpha;
     const eye = Math.max(openBase, 1) * this.blinkFactor(nowMs);
     return [
       ['ParamEyeLOpen', eye],

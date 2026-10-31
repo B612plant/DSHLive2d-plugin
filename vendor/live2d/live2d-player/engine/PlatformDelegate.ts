@@ -78,6 +78,7 @@ export class PlatformDelegate {
     copy.getContext('2d')!.drawImage(this.canvas,0,0);return copy;
   }
   portraitHead(){return this.subdelegate?.getLive2DManager().portraitHead??null;}
+  gazeAnchor(){return this.subdelegate?.getLive2DManager().gazeAnchor??null;}
 
   switchCharacter(runtime: ActiveCharacterRuntime): void {
     setActiveCharacter(runtime);

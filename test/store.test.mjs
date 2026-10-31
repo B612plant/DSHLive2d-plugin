@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readFile,readdir} from 'node:fs/promises';
+import {mkdtemp,rm,readFile,readdir,rename} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {StageStore,safePath} from '../src/store.mjs';
@@ -10,10 +10,27 @@ function zip(entries){const local=[],central=[];let offset=0;for(const [name,val
 const model={Version:3,FileReferences:{Moc:'model.moc3',Textures:['texture.png'],Motions:{Idle:[{File:'idle.motion3.json'}]},Expressions:[{Name:'smile',File:'smile.exp3.json'}]}};
 const fixture=(prefix='')=>Object.fromEntries(Object.entries({'model.moc3':'MOC3fixture','texture.png':'png-fixture','model.model3.json':model,'idle.motion3.json':{},'smile.exp3.json':{}}).map(([k,v])=>[prefix+k,v]));
 async function isolated(fn){const root=await mkdtemp(join(tmpdir(),'live2d-stage-test-'));try{const store=new StageStore(root);await store.initialize();await fn(store,root);}finally{await rm(root,{recursive:true,force:true});}}
-test('root and nested models, renamed actions survive reload, roles remain isolated',()=>isolated(async(s,root)=>{const a=await s.importZip(zip(fixture()),'A');const b=await s.importZip(zip(fixture('nested/')),'B');assert.equal(s.catalog().characterId,b.id);await s.update({characterId:a.id,select:true,actionId:a.actions[0].id,actionName:'招手'});assert.equal(s.catalog().actions[0].name,'招手');assert.equal(b.actions[0].name,'idle');const reloaded=new StageStore(root);await reloaded.initialize();assert.equal(reloaded.catalog().actions[0].name,'招手');assert.equal(reloaded.catalog().actions[0].id,a.actions[0].id);}));
+test('root and nested models, renamed actions survive reload, roles remain isolated',()=>isolated(async(s,root)=>{const a=await s.importZip(zip(fixture()),'A');const b=await s.importZip(zip(fixture('nested/')),'B');assert.equal(s.catalog().characterId,a.id);await s.update({characterId:b.id,select:true});assert.equal(s.catalog().characterId,b.id);await s.update({characterId:a.id,select:true,actionId:a.actions[0].id,actionName:'招手'});assert.equal(s.catalog().actions[0].name,'招手');assert.equal(b.actions[0].name,'idle');const reloaded=new StageStore(root);await reloaded.initialize();assert.equal(reloaded.catalog().actions[0].name,'招手');assert.equal(reloaded.catalog().actions[0].id,a.actions[0].id);}));
 test('missing model3 is generated from moc3 and adjacent resources',()=>isolated(async s=>{const files=fixture('bundle/');delete files['bundle/model.model3.json'];const c=await s.importZip(zip(files),'自动');assert.equal(c.modelPath,'bundle/generated.model3.json');assert.equal(c.actions.length,2);assert.equal(c.model.FileReferences.Moc,'model.moc3');}));
 test('rejects traversal, absolute paths, duplicate model candidates and missing textures without corrupting prior state',()=>isolated(async s=>{await s.importZip(zip(fixture()),'保留');const previous=s.snapshot();for(const bad of [{'../outside.moc3':'MOC3'},{'/absolute.moc3':'MOC3'},{...fixture(),'second.moc3':'MOC3'}, {'model.moc3':'MOC3'}]){await assert.rejects(s.importZip(zip(bad),'错误'));assert.deepEqual(s.snapshot(),previous);}for(const path of ['../x','C:/x','/x','x\\y','a/../../x','NUL.png','a./x','a?b'])assert.throws(()=>safePath(path));}));
-test('playback needs ready preview; rejects stale role and unknown action; returns honest receipts',()=>isolated(async s=>{const a=await s.importZip(zip(fixture()),'A');await assert.rejects(async()=>s.play(a.id,a.actions[0].id),/未就绪/);s.poll('preview',a.id,null,true);const event=s.play(a.id,a.actions[0].id);assert.equal(event.status,'queued');assert.equal(s.poll('preview',a.id,0,true).events.length,1);s.receipt({eventId:event.eventId,status:'played'});assert.equal(s.receipts.get(event.eventId).status,'played');assert.throws(()=>s.play(a.id,'made-up'));await s.importZip(zip(fixture()),'B');assert.throws(()=>s.play(a.id,a.actions[0].id),/角色已切换/);}));
+test('paired dispatch permits repeats without readiness or receipts and validates both tracks',()=>isolated(async s=>{
+  const a=await s.importZip(zip(fixture()),'A'),motion=a.actions.find(a=>a.kind==='motion'),expression=a.actions.find(a=>a.kind==='expression');const received=[];const stop=s.subscribe('preview',a.id,e=>received.push(e));
+  const first=s.present(a.id,motion.id,expression.id),second=s.present(a.id,motion.id,expression.id);assert.equal(first.status,'submitted');assert.notEqual(first.eventId,second.eventId);assert.equal(received.length,2);assert.equal(received[0].motion.id,motion.id);assert.equal(received[0].expression.id,expression.id);assert.equal(s.receipts,undefined);
+  assert.throws(()=>s.present(a.id,expression.id,motion.id));assert.throws(()=>s.present(a.id,motion.id,null));assert.equal(received.length,2);stop();assert.doesNotThrow(()=>s.present(a.id,motion.id,expression.id));
+  const b=await s.importZip(zip(fixture()),'B');await s.update({characterId:b.id,select:true});assert.throws(()=>s.present(a.id,motion.id,expression.id),/角色已切换/);
+}));
+test('separate JSON catalogs are created at import; renames touch only the chosen entry and survive restart',()=>isolated(async(s,root)=>{
+  const a=await s.importZip(zip(fixture()),'A');await s.updatePreferences({actionControl:true});const prompt=s.presentationPrompt(),motionPath=s.catalogPath(a.id,'motions'),expressionPath=s.catalogPath(a.id,'expressions');
+  const expressions=await readFile(expressionPath,'utf8'),original=await s.readCatalog('motions'),characters=await readFile(join(root,'characters.json'),'utf8');
+  assert.equal(original.motions.length,1);assert.equal((await s.readCatalog('expressions')).expressions.length,1);
+  await s.update({characterId:a.id,actionId:a.actions[0].id,actionName:'新动作名称'});const updated=await s.readCatalog('motions');assert.deepEqual(updated,{...original,motions:original.motions.map(x=>({...x,name:'新动作名称'}))});assert.equal(await readFile(expressionPath,'utf8'),expressions);assert.equal(await readFile(join(root,'characters.json'),'utf8'),characters);assert.notEqual(s.presentationPrompt(),prompt);const renamedPrompt=s.presentationPrompt();
+  const reload=new StageStore(root);await reload.initialize();assert.equal(reload.catalog().motions[0].name,'新动作名称');assert.equal(await readFile(motionPath,'utf8'),await readFile(reload.catalogPath(a.id,'motions'),'utf8'));
+  const b=await s.importZip(zip(fixture()),'B');assert.equal(s.presentationPrompt(),renamedPrompt);await s.update({characterId:b.id,select:true});assert.notEqual(s.presentationPrompt(),prompt);assert.ok(s.presentationPrompt().includes(b.id));
+}));
+test('a missing category accepts null but never an ID from the other category',()=>isolated(async s=>{
+  const f=fixture();f['model.model3.json']={...model,FileReferences:{...model.FileReferences,Expressions:[]}};const c=await s.importZip(zip(f),'Motion only');assert.doesNotThrow(()=>s.present(c.id,c.actions[0].id,null));assert.throws(()=>s.present(c.id,null,null));
+}));
+
 test('concurrent writes preserve both role names',()=>isolated(async s=>{const a=await s.importZip(zip(fixture()),'A'),b=await s.importZip(zip(fixture()),'B');await Promise.all([s.update({characterId:a.id,name:'一'}),s.update({characterId:b.id,name:'二'})]);assert.deepEqual(s.state.characters.map(c=>c.name),['一','二']);}));
 
 test('bundled DeepSeek initializes once, retains all resources, and preserves renamed actions',()=>isolated(async(s,root)=>{
@@ -51,3 +68,9 @@ test('adding default model preserves an existing selected user character',()=>is
 }));
 
 test('preferences persist and reject invalid keys without changing state',()=>isolated(async(s,root)=>{assert.deepEqual(s.preferences(),{desktopFloating:false,actionControl:false,visible:true});await s.updatePreferences({actionControl:true,desktopFloating:true});const next=new StageStore(root);await next.initialize();assert.deepEqual(next.preferences(),{desktopFloating:true,actionControl:true,visible:true});await assert.rejects(s.updatePreferences({actionControl:'true'}));await assert.rejects(s.updatePreferences({unknown:true}));assert.equal(s.preferences().actionControl,true);}));
+
+test('catalog cache avoids disk reads between model switches and renames',()=>isolated(async s=>{
+  const a=await s.importZip(zip(fixture()),'A');await s.updatePreferences({actionControl:true});const before=await s.readCatalog('motions'),path=s.catalogPath(a.id,'motions'),version=s.catalogVersion('motions'),prompt=s.presentationPrompt();
+  await rename(path,path+'.held');try{const read=await s.readCatalog('motions');assert.deepEqual(read,before);read.motions[0].name='external mutation';assert.deepEqual(await s.readCatalog('motions'),before);assert.equal(s.catalogVersion('motions'),version);assert.equal(s.presentationPrompt(),prompt);}finally{await rename(path+'.held',path);}
+  await s.update({characterId:a.id,actionId:a.actions[0].id,actionName:a.actions[0].name});assert.equal(s.catalogVersion('motions'),version);assert.equal(s.presentationPrompt(),prompt);
+}));

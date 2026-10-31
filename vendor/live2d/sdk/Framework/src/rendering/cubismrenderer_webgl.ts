@@ -493,6 +493,11 @@ export class CubismRenderer_WebGL extends CubismRenderer {
    * @param maskBufferCount バッファの生成数
    */
   public initialize(model: CubismModel, maskBufferCount = 1): void {
+    const countGroups = (masks: Int32Array[]) => new Set(masks.filter(mask => mask.length).map(mask => Array.from(mask).sort((a,b)=>a-b).join(','))).size;
+    const maskGroups = Math.max(countGroups(model.getDrawableMasks()),countGroups(model.getOffscreenMasks()));
+    // Multiple packed atlases isolate all masks without rebuilding the same
+    // high-precision mask for every mesh, which stalls interactive resizing.
+    if (maskGroups > 36) maskBufferCount = Math.max(maskBufferCount,Math.ceil(maskGroups / 32));
     if (model.isUsingMasking()) {
       this._drawableClippingManager = new CubismClippingManager_WebGL(); // クリッピングマスク・バッファ前処理方式を初期化
       this._drawableClippingManager.initializeForDrawable(
@@ -513,6 +518,9 @@ export class CubismRenderer_WebGL extends CubismRenderer {
     // Draw each mask separately for complex models, including hidden expressions
     // that may become visible later. Configure once before allocating GL buffers.
     const clippingManagers = [this._drawableClippingManager, this._offscreenClippingManager];
+    if (maskBufferCount > 1) {
+      for (const manager of clippingManagers) manager?.setClippingMaskBufferSize(1024);
+    }
     if (clippingManagers.some(manager => manager?.requiresHighPrecisionMask())) {
       this.useHighPrecisionMask(true);
       for (const manager of clippingManagers) {

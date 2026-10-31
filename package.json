@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-live2d-stage",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "type": "module",
   "description": "DSHLive2D — DeepSeek Harness Live2D 桌面角色、动作预览与 Agent 动作控制",
   "main": "./lib/index.mjs",
@@ -39,7 +39,9 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-ui-settings-general"
+        "@deepseek-ai/dsh-client-ui-settings-general",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-ui-conversation"
       ]
     }
   },

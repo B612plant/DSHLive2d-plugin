@@ -126,6 +126,9 @@ export class LAppSubdelegate {
    * Resize canvas and re-initialize view.
    */
   public onResize(): void {
+    const width = Math.max(1, Math.round(this._canvas.clientWidth * window.devicePixelRatio));
+    const height = Math.max(1, Math.round(this._canvas.clientHeight * window.devicePixelRatio));
+    if (this._canvas.width === width && this._canvas.height === height) return;
     // SDK initialization resets scale. Keep the user's transform while updating screen bounds.
     const transform = new Float32Array(this._view._viewMatrix.getArray());
     this.resizeCanvas();
@@ -280,8 +283,10 @@ export class LAppSubdelegate {
    * Resize the canvas to fill the screen.
    */
   private resizeCanvas(): void {
-    this._canvas.width = this._canvas.clientWidth * window.devicePixelRatio;
-    this._canvas.height = this._canvas.clientHeight * window.devicePixelRatio;
+    const width = Math.max(1, Math.round(this._canvas.clientWidth * window.devicePixelRatio));
+    const height = Math.max(1, Math.round(this._canvas.clientHeight * window.devicePixelRatio));
+    if (this._canvas.width !== width) this._canvas.width = width;
+    if (this._canvas.height !== height) this._canvas.height = height;
 
     const gl = this._glManager.getGl();
 

@@ -40,6 +40,9 @@ export class LAppLive2DManager {
   private _watermarkLoadToken = 0;
   private _paramOverlay: ParamOverlayFn | null = null;
   private readonly _idleLife = new IdleLife();
+  public gazeAnchor: {x:number;y:number} | null = null;
+  private _faceParts: string[] = [];
+  private _faceDrawables: number[] | null = null;
   /**
    * 現在のシーンで保持しているすべてのモデルを解放する
    */
@@ -282,13 +285,15 @@ export class LAppLive2DManager {
       ? cubismModel.getParameterDefaultValue(eyeIndex)
       : 1;
     for (const [paramId, value] of this._idleLife.frame(performance.now(), eyeDefault > 0.2 ? eyeDefault : 1)) {
-      const handle = idManager.getId(paramId);
+      const handle = idManager.getId(model.stagePhysicsInputs[paramId] ?? paramId);
       const index = cubismModel.getParameterIndex(handle);
       if (index < 0 || index >= parameterCount) {
         continue;
       }
       cubismModel.setParameterValueById(handle, value);
     }
+    const breath = idManager.getId('ParamBreath');
+    cubismModel.setParameterValueById(breath, .5 + .5 * Math.sin(performance.now() / 1000 * Math.PI / 2));
   }
 
   /** 只允许使用模型已加载的本地 Expression。 */
@@ -337,6 +342,7 @@ export class LAppLive2DManager {
     }
 
     const portrait=this._subdelegate.getCanvas().dataset.portrait==='true';
+    if (model.isInitialized()) model.setStageInput(() => this.applyIdleLife(model));
     if(!portrait)model.update();
     const cubismModel = model.getModel();
     if(portrait&&cubismModel)cubismModel.update();
@@ -362,7 +368,6 @@ export class LAppLive2DManager {
         },
       );
     }
-    if(!portrait)this.applyIdleLife(model);
     if (hasWatermarkSkip(this._watermarkPlan)) {
       applyWatermarkSkip(
         cubismModel,
@@ -373,6 +378,24 @@ export class LAppLive2DManager {
     // Commit post-motion eye/lip/overlay parameters to drawable vertices before rendering.
     if(cubismModel)cubismModel.update();
     model.draw(projection); // 参照渡しなのでprojectionは変質する。
+    if (cubismModel && this._faceParts.length) {
+      if (!this._faceDrawables) {
+        const parts = new Set(this._faceParts.map(id => cubismModel.getPartIndex(CubismFramework.getIdManager().getId(id))));
+        const parents = cubismModel.getPartParentPartIndices();
+        this._faceDrawables = [];
+        for (let i=0;i<cubismModel.getDrawableCount();i++) {
+          let part = cubismModel.getDrawableParentPartIndex(i);
+          for (let depth=0;part>=0&&depth<64;depth++,part=parents[part]) { if(parts.has(part)){this._faceDrawables.push(i);break;} }
+        }
+      }
+      let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+      for (const index of this._faceDrawables) {
+        if(cubismModel.getDrawableOpacity(index)<.2)continue;
+        const vertices=cubismModel.getDrawableVertices(index);
+        for(let i=0;i<vertices.length;i+=2){const x=(projection.transformX(vertices[i])+1)/2,y=(1-projection.transformY(vertices[i+1]))/2;left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+      }
+      if(right>left&&bottom>top)this.gazeAnchor={x:(left+right)/2,y:(top+bottom)/2};
+    }
     if(portrait&&cubismModel){
       const head=LAppDefine.ActiveCharacter?.hitAreas.find(area=>/head|face|头|脸/i.test(area.name));
       if(head){
@@ -430,6 +453,21 @@ export class LAppLive2DManager {
   private beginWatermarkSkip(modelPath: string, modelJsonName: string): void {
     const token = ++this._watermarkLoadToken;
     this._watermarkPlan = { parameters: [], parts: [] };
+    this._faceParts=[];this._faceDrawables=null;this.gazeAnchor=null;
+    void (async()=>{
+      try {
+        const response=await fetch(modelPath+modelJsonName);
+        if(!response.ok)return;
+        const config=await response.json(),file=config.FileReferences?.DisplayInfo;
+        if(!file)return;
+        const display=await fetch(modelPath+file);
+        if(!display.ok)return;
+        const cdi=await display.json();
+        if(token!==this._watermarkLoadToken)return;
+        const face=(cdi.Parts??[]).filter((p:any)=>/^(face|\u8138)$/i.test(p.Name));
+        this._faceParts=(face.length?face:(cdi.Parts??[]).filter((p:any)=>/^(head|\u5934)$/i.test(p.Name))).map((p:any)=>p.Id);
+      } catch { /* Use the upper canvas as the gaze anchor if display metadata is unavailable. */ }
+    })();
     void loadWatermarkSkipPlan(modelPath, modelJsonName).then((plan) => {
       if (token !== this._watermarkLoadToken) {
         return;

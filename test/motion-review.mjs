@@ -25,7 +25,7 @@ try {
   try{await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent?.includes('已就绪'),{},{timeout:25000});}catch(e){console.log(await page.locator('body').innerText());await page.screenshot({path:resolve(report,'failure.png')});throw e;}
   assert.equal(s.state.characters.length,1);const c=s.character();assert.ok(c.actions.length>0);
   await page.locator('nav').evaluate(el=>{el.parentElement.style.display='none';});
-  for(let i=0;i<c.actions.length;i++){s.poll('review',c.id,null,true);s.play(c.id,c.actions[i].id);for(let j=0;j<3;j++){await new Promise(r=>setTimeout(r,1100));await page.locator('.l2ds-stage').screenshot({path:resolve(report,'motion-'+i+'-'+j+'.png')});}await new Promise(r=>setTimeout(r,3500));}
+  for(let i=0;i<c.actions.length;i++){s.play(c.id,c.actions[i].id);for(let j=0;j<3;j++){await new Promise(r=>setTimeout(r,1100));await page.locator('.l2ds-stage').screenshot({path:resolve(report,'motion-'+i+'-'+j+'.png')});}await new Promise(r=>setTimeout(r,3500));}
   console.log(JSON.stringify(c.actions));
 }finally{await browser?.close();if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}await rm(root,{recursive:true,force:true});}
 
